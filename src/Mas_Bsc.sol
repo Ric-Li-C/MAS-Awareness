@@ -5,6 +5,10 @@ import {ERC721A} from "./lib/ERC721A.sol";
 import {IERC2981, ERC2981} from "./lib/ERC2981.sol";
 import {Strings} from "./lib/Strings.sol";
 
+interface ERC20Token {
+    function transfer(address to, uint256 amount) external returns (bool);
+}
+
 contract Mas_Bsc is ERC721A, ERC2981 {
     using Strings for uint256;
 
@@ -14,8 +18,13 @@ contract Mas_Bsc is ERC721A, ERC2981 {
     bool public isRevealed;
     uint256 public constant MAX_SUPPLY = 10000;
     uint256 public constant MINT_PRICE = 0.09 ether;
+    uint256 public donorCount;
+    uint256 public referrerCount;
+    mapping(address => bool) public isDonor;
+    mapping(address => bool) public isReferrer;
     mapping(address => bool) public isWhitelisted;
     mapping(address => uint256) public referralAmount;
+    ERC20Token private _tokenContract;
 
     event RoyaltyUpdated(address receiver, uint96 points);
     event ImageRevealed(string baseURI);
@@ -48,48 +57,53 @@ contract Mas_Bsc is ERC721A, ERC2981 {
     /* ========== Admin Setting Function ========== */
     // Royalty is in 10000, so 500 means 5%, 1000 means 10%, etc
     function setRoyalty(
-        address _newReceiver,
-        uint96 _newPoints
+        address newReceiver,
+        uint96 newPoints
     ) external onlyOwner {
-        require(_newPoints <= 10000, "Invalid royalty points");
+        require(newPoints <= 10000, "Invalid royalty points");
 
-        address _receiver = _newReceiver;
+        address _receiver = newReceiver;
 
-        if (_newReceiver == address(0)) {
+        if (newReceiver == address(0)) {
             _receiver = msg.sender;
         }
-        _royaltyStruct = RoyaltyInfo(_receiver, _newPoints);
+        _royaltyStruct = RoyaltyInfo(_receiver, newPoints);
 
-        emit RoyaltyUpdated(_receiver, _newPoints);
+        emit RoyaltyUpdated(_receiver, newPoints);
     }
 
-    function revealImage(string memory _newbaseURI) external onlyOwner {
-        _strBaseURI = _newbaseURI;
+    function revealImage(string memory newbaseURI) external onlyOwner {
+        _strBaseURI = newbaseURI;
         isRevealed = true;
 
-        emit ImageRevealed(_newbaseURI);
+        emit ImageRevealed(newbaseURI);
     }
 
     /* ========== Main Functions ========== */
-    function batchMint(address _referral, uint256 _numNfts) external payable {
+    function batchMint(address referral, uint256 numNfts) external payable {
         uint256 totalMinted = totalSupply();
         uint256 remaining = MAX_SUPPLY - totalMinted;
         require(totalMinted < MAX_SUPPLY, "All minted");
-        require(
-            _numNfts > 0 && _numNfts <= remaining,
-            "Invalid number of NFTs"
-        );
+        require(numNfts > 0 && numNfts <= remaining, "Invalid number of NFTs");
 
-        uint256 mintFee = _numNfts * MINT_PRICE;
+        uint256 mintFee = numNfts * MINT_PRICE;
         require(msg.value >= mintFee, "Insufficient value");
 
-        if (_referral != address(0)) {
-            referralAmount[_referral] += mintFee / 3;
+        _mint(msg.sender, numNfts);
+        if (!isDonor[msg.sender]) {
+            donorCount++;
+            isDonor[msg.sender] = true;
         }
 
-        _mint(msg.sender, _numNfts);
+        if (referral != address(0)) {
+            if (!isReferrer[referral]) {
+                referrerCount++;
+                isReferrer[referral] = true;
+            }
+            referralAmount[referral] += mintFee / 3;
+        }
 
-        emit NftMinted(msg.sender, _numNfts);
+        emit NftMinted(msg.sender, numNfts);
     }
 
     /* ========== Whitelist Functions ========== */
@@ -126,16 +140,29 @@ contract Mas_Bsc is ERC721A, ERC2981 {
     }
 
     // Total contract balance will be withdrawn at once
-    function adminWithdraw(address payable _recipient) external onlyOwner {
+    function adminWithdraw(address payable recipient) external onlyOwner {
         uint256 balance = address(this).balance;
         require(balance > 0, "Contract balance is zero");
 
-        if (_recipient == address(0)) {
-            _recipient = payable(OWNER);
+        if (recipient == address(0)) {
+            recipient = payable(OWNER);
         }
 
-        (bool success, ) = payable(_recipient).call{value: balance}("");
+        (bool success, ) = payable(recipient).call{value: balance}("");
         require(success, "Withdrawal failed");
+    }
+
+    /* ========== ERC20 Token Transfer Functions ========== */
+    // This function serves two purposes:
+    // 1. To handle airdrops received by the contract;
+    // 2. To assist in recovering ERC20 tokens mistakenly transferred to this contract address.
+    function transferERC20Token(
+        address tokenAddress,
+        address to,
+        uint256 amount
+    ) external returns (bool) {
+        _tokenContract = ERC20Token(tokenAddress);
+        return _tokenContract.transfer(to, amount);
     }
 
     /* ========== Override Functions ========== */
@@ -144,30 +171,25 @@ contract Mas_Bsc is ERC721A, ERC2981 {
     ) public view override returns (string memory) {
         if (!_exists(tokenId)) _revert(URIQueryForNonexistentToken.selector);
 
-        string memory image_url;
         string memory json;
 
         if (!isRevealed) {
-            image_url = "https://raw.githubusercontent.com/0xacme/pandora/main/3.gif";
+            json = string(
+                abi.encodePacked(
+                    '{"name": "Awareness #',
+                    tokenId.toString(),
+                    '","description":"This is #',
+                    tokenId.toString(),
+                    ' NFT in MAS Awareness NFT Project (BSC).",',
+                    '"external_url":"https://mas_awareness.top",',
+                    '"image":"https://raw.githubusercontent.com/Ric-Li-C/MAS_Awareness/main/image/nft.png"}'
+                )
+            );
         } else {
-            image_url = string(
-                abi.encodePacked(_strBaseURI, tokenId.toString(), ".png")
+            json = string(
+                abi.encodePacked(_strBaseURI, tokenId.toString(), ".json")
             );
         }
-
-        json = string(
-            abi.encodePacked(
-                '{"name": "Awareness #',
-                tokenId.toString(),
-                '","description":"This is #',
-                tokenId.toString(),
-                ' NFT in MAS Awareness NFT Project (BSC).",',
-                '"external_url":"https://mas_awareness.top",',
-                '"image":"',
-                image_url,
-                '"}'
-            )
-        );
 
         return json;
     }
