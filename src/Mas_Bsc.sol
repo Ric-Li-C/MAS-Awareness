@@ -176,7 +176,7 @@ contract Mas_Bsc is ERC721A, ERC2981 {
         if (!isRevealed) {
             json = string(
                 abi.encodePacked(
-                    '{"name": "Awareness #',
+                    '{"name": "MAS Awareness #',
                     tokenId.toString(),
                     '","description":"This is #',
                     tokenId.toString(),
