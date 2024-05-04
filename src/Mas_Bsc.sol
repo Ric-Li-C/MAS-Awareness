@@ -182,7 +182,7 @@ contract Mas_Bsc is ERC721A, ERC2981 {
                     tokenId.toString(),
                     ' NFT in MAS Awareness NFT Project (BSC).",',
                     '"external_url":"https://www.mas-awareness.top",',
-                    '"image":"https://raw.githubusercontent.com/Ric-Li-C/MAS-Awareness/main/image/nft.png"}'
+                    '"image":"https://raw.githubusercontent.com/Ric-Li-C/MAS-Awareness/main/image/nft.gif"}'
                 )
             );
         } else {
