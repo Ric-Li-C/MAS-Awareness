@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.18;
+pragma solidity ^0.8.24;
 
 import {ERC721A} from "./lib/ERC721A.sol";
 import {IERC2981, ERC2981} from "./lib/ERC2981.sol";
-import {Strings} from "./lib/Strings.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 interface ERC20Token {
     function transfer(address to, uint256 amount) external returns (bool);
 }
 
-contract Mas_Bsc is ERC721A, ERC2981 {
+contract MAP is ERC721A, ERC2981 {
     using Strings for uint256;
 
     address public immutable OWNER;
@@ -17,22 +17,19 @@ contract Mas_Bsc is ERC721A, ERC2981 {
     string private _strBaseURI;
     bool public isRevealed;
     uint256 public constant MAX_SUPPLY = 10000;
-    uint256 public constant MINT_PRICE = 0.09 ether;
+    uint256 public constant MINT_PRICE = 0.1 ether;
     uint256 public donorCount;
-    uint256 public referrerCount;
     mapping(address => bool) public isDonor;
-    mapping(address => bool) public isReferrer;
     mapping(address => bool) public isWhitelisted;
-    mapping(address => uint256) public referralAmount;
     ERC20Token private _tokenContract;
 
     event RoyaltyUpdated(address receiver, uint96 points);
     event ImageRevealed(string baseURI);
-    event NftMinted(address minter, uint256 amount);
+    event NftMinted(address minter, uint256 quantity);
 
     /* ========== Set Up Functions ========== */
     // Royalty is in 10000, so 1000 means 10%
-    constructor() ERC721A("MAS Awareness Project (BSC)", "MAP") {
+    constructor() ERC721A("MAS Awareness Project", "MAP") {
         OWNER = msg.sender;
         _royaltyStruct = RoyaltyInfo(msg.sender, 1000);
     }
@@ -80,27 +77,21 @@ contract Mas_Bsc is ERC721A, ERC2981 {
     }
 
     /* ========== Main Functions ========== */
-    function batchMint(address referral, uint256 numNfts) external payable {
+    function batchMint(uint256 numNfts) external payable {
         uint256 totalMinted = totalSupply();
-        uint256 remaining = MAX_SUPPLY - totalMinted;
         require(totalMinted < MAX_SUPPLY, "All minted");
+
+        uint256 remaining = MAX_SUPPLY - totalMinted;
         require(numNfts > 0 && numNfts <= remaining, "Invalid number of NFTs");
 
         uint256 mintFee = numNfts * MINT_PRICE;
         require(msg.value >= mintFee, "Insufficient value");
 
         _mint(msg.sender, numNfts);
+
         if (!isDonor[msg.sender]) {
             donorCount++;
             isDonor[msg.sender] = true;
-        }
-
-        if (referral != address(0)) {
-            if (!isReferrer[referral]) {
-                referrerCount++;
-                isReferrer[referral] = true;
-            }
-            referralAmount[referral] += mintFee / 3;
         }
 
         emit NftMinted(msg.sender, numNfts);
@@ -116,6 +107,9 @@ contract Mas_Bsc is ERC721A, ERC2981 {
     function claim() external {
         require(isWhitelisted[msg.sender], "Not in whitelist");
 
+        uint256 totalMinted = totalSupply();
+        require(totalMinted < MAX_SUPPLY, "All minted");
+
         isWhitelisted[msg.sender] = false;
         _mint(msg.sender, 1);
 
@@ -123,26 +117,10 @@ contract Mas_Bsc is ERC721A, ERC2981 {
     }
 
     /* ========== Withdraw Functions ========== */
-    // Total referral amount will be withdrawn at once
-    function referralWithdraw() external {
-        uint256 balance = address(this).balance;
-        uint256 amountToWithdraw = referralAmount[msg.sender];
-        require(amountToWithdraw > 0, "No referral amount");
-        require(balance >= amountToWithdraw, "Insufficient contract balance");
-
-        // Set `referralAmount[msg.sender]` to `0` before withdraw action to prevent reentrancy attack
-        referralAmount[msg.sender] = 0;
-
-        (bool success, ) = payable(msg.sender).call{value: amountToWithdraw}(
-            ""
-        );
-        require(success, "Withdrawal failed");
-    }
-
     // Total contract balance will be withdrawn at once
     function adminWithdraw(address payable recipient) external onlyOwner {
         uint256 balance = address(this).balance;
-        require(balance > 0, "Contract balance is zero");
+        require(balance > 0, "Zero contract balance");
 
         if (recipient == address(0)) {
             recipient = payable(OWNER);
@@ -180,9 +158,9 @@ contract Mas_Bsc is ERC721A, ERC2981 {
                     tokenId.toString(),
                     '","description":"This is #',
                     tokenId.toString(),
-                    ' NFT in MAS Awareness NFT Project (BSC).",',
+                    ' NFT in MAS Awareness NFT Project.",',
                     '"external_url":"https://www.mas-awareness.top",',
-                    '"image":"https://raw.githubusercontent.com/Ric-Li-C/MAS-Awareness/main/image/nft.gif"}'
+                    '"image":"https://raw.githubusercontent.com/Ric-Li-C/MAS-Awareness/main/images/nft.gif"}'
                 )
             );
         } else {
