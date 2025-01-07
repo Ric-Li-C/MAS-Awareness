@@ -154,7 +154,7 @@ contract MAP is ERC721A, ERC2981 {
         if (!isRevealed) {
             json = string(
                 abi.encodePacked(
-                    '{"name": "MAS Awareness #',
+                    'data:application/json;utf8,{"name": "MAS Awareness #',
                     tokenId.toString(),
                     '","description":"This is #',
                     tokenId.toString(),
